@@ -1,0 +1,230 @@
+/* MAIN CONTACT PAGE */
+
+.contact-page {
+  width: 100% !important;
+  min-height: 100vh !important;
+  padding: 50px 20px !important;
+  box-sizing: border-box !important;
+
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+
+  background: linear-gradient(
+    to right,
+    #00c6ff,
+    #a044a0 90%
+  ) !important;
+}
+
+
+/* WHITE CONTACT BOX */
+
+.contact-page .contact-container {
+  width: 780px !important;
+  max-width: 100% !important;
+
+  padding: 40px !important;
+  box-sizing: border-box !important;
+
+  background: #ffffff !important;
+  color: #222222 !important;
+
+  border-radius: 20px !important;
+
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.2) !important;
+}
+
+
+/* HEADING */
+
+.contact-page .contact-container h1 {
+  display: block !important;
+
+  margin: 0 0 45px !important;
+  padding: 0 !important;
+
+  text-align: center !important;
+
+  font-size: 42px !important;
+  font-weight: bold !important;
+
+  color: #222222 !important;
+
+  text-shadow: 2px 3px 5px rgba(0, 0, 0, 0.3) !important;
+}
+
+
+/* TWO COLUMN LAYOUT */
+
+.contact-page .contact-row {
+  display: grid !important;
+
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+
+  gap: 35px 40px !important;
+}
+
+
+/* INPUT GROUP */
+
+.contact-page .contact-group {
+  display: flex !important;
+  flex-direction: column !important;
+
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+
+/* LABEL */
+
+.contact-page .contact-group label {
+  display: block !important;
+
+  margin: 0 0 12px !important;
+
+  font-size: 19px !important;
+  font-weight: bold !important;
+
+  color: #222222 !important;
+}
+
+
+/* INPUT */
+
+.contact-page .contact-group input {
+  display: block !important;
+
+  width: 100% !important;
+  height: auto !important;
+
+  padding: 12px 2px !important;
+  box-sizing: border-box !important;
+
+  border: none !important;
+  border-bottom: 2px solid #222222 !important;
+  border-radius: 0 !important;
+
+  outline: none !important;
+
+  background: transparent !important;
+
+  color: #222222 !important;
+
+  font-size: 16px !important;
+  box-shadow: none !important;
+}
+
+
+.contact-page .contact-group input:focus {
+  border-bottom: 2px solid #a044a0 !important;
+}
+
+
+/* MESSAGE */
+
+.contact-page .message-group {
+  margin-top: 40px !important;
+}
+
+.contact-page .message-group textarea {
+  display: block !important;
+
+  width: 100% !important;
+  min-height: 120px !important;
+
+  padding: 12px !important;
+  box-sizing: border-box !important;
+
+  border: 1px solid #777777 !important;
+  border-radius: 5px !important;
+
+  outline: none !important;
+
+  background: #ffffff !important;
+  color: #222222 !important;
+
+  font-size: 16px !important;
+  font-family: Arial, sans-serif !important;
+
+  resize: vertical !important;
+  box-shadow: none !important;
+}
+
+
+.contact-page .message-group textarea:focus {
+  border: 1px solid #a044a0 !important;
+}
+
+
+/* SUBMIT BUTTON */
+
+.contact-page .contact-submit {
+  display: block !important;
+
+  width: 180px !important;
+
+  margin-top: 35px !important;
+  padding: 12px !important;
+
+  border: none !important;
+  border-radius: 6px !important;
+
+  background: linear-gradient(
+    to right,
+    #00c6ff,
+    #a044a0 90%
+  ) !important;
+
+  color: #ffffff !important;
+
+  font-size: 20px !important;
+  font-weight: bold !important;
+
+  cursor: pointer !important;
+
+  box-shadow: none !important;
+
+  transition: 0.3s ease !important;
+}
+
+
+.contact-page .contact-submit:hover {
+  transform: translateY(-3px) !important;
+
+  box-shadow: 0 6px 15px rgba(160, 68, 160, 0.4) !important;
+}
+
+
+/* MOBILE RESPONSIVE */
+
+@media (max-width: 600px) {
+
+  .contact-page {
+    padding: 25px 12px !important;
+  }
+
+  .contact-page .contact-container {
+    padding: 25px 20px !important;
+  }
+
+  .contact-page .contact-container h1 {
+    font-size: 30px !important;
+    margin-bottom: 30px !important;
+  }
+
+  .contact-page .contact-row {
+    grid-template-columns: 1fr !important;
+    gap: 25px !important;
+  }
+
+  .contact-page .message-group {
+    margin-top: 30px !important;
+  }
+
+  .contact-page .contact-submit {
+    width: 100% !important;
+  }
+
+}
