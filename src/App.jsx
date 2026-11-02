@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import ContactPage from "./contactpage";
 
-const API_URL = "http://localhost:5000/api/auth";
-const ORDERS_API_URL = "http://localhost:5000/api/orders";
+const API_URL = "https://vogue-clothing-api.onrender.com/api/auth";
+const ORDERS_API_URL = "https://vogue-clothing-api.onrender.com/api/orders";
 
 const products = [
   { id: 1, name: "Classic Black Jacket", category: "Men", price: 2199, image: "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=700" },
