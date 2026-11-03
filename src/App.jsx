@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import "./App.css";
 import ContactPage from "./contactpage";
@@ -24,6 +23,26 @@ const ORDER_STATUSES = [
   "Delivered",
   "Cancelled"
 ];
+
+// Safely read JSON from backend.
+// This also gives a readable error if the server returns HTML.
+const safeReadJSON = async (response) => {
+  const text = await response.text();
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (text.trim().startsWith("<")) {
+      throw new Error(
+        `Backend ne HTML response diya (HTTP ${response.status}). Render par API route aur deployment check karo.`
+      );
+    }
+
+    throw new Error(
+      `Invalid server response (HTTP ${response.status}).`
+    );
+  }
+};
 
 function App() {
   const [page, setPage] = useState("home");
@@ -60,6 +79,9 @@ function App() {
   const [orderMessage, setOrderMessage] = useState("");
   const [placedOrder, setPlacedOrder] = useState(null);
 
+  // Payment states
+  const [paymentMethod, setPaymentMethod] = useState("COD");
+
   const [shippingAddress, setShippingAddress] = useState({
     fullName: "",
     phone: "",
@@ -75,6 +97,12 @@ function App() {
   const [ordersError, setOrdersError] = useState("");
   const [selectedOrder, setSelectedOrder] = useState(null);
 
+  // Order cancellation states
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState("");
+  const [cancellingOrder, setCancellingOrder] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+
   // Admin states
   const [adminOrders, setAdminOrders] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
@@ -89,7 +117,10 @@ function App() {
     localStorage.setItem("vogueWishlist", JSON.stringify(wishlist));
   }, [wishlist]);
 
-  const cartCount = cart.reduce((total, item) => total + item.qty, 0);
+  const cartCount = cart.reduce(
+    (total, item) => total + item.qty,
+    0
+  );
 
   const total = cart.reduce(
     (sum, item) => sum + item.price * item.qty,
@@ -102,6 +133,17 @@ function App() {
   const formatPrice = (amount) =>
     Number(amount || 0).toLocaleString("en-IN");
 
+  const paymentMethodLabel = (method) => {
+    const methods = {
+      COD: "Cash on Delivery",
+      DEMO_UPI: "Demo UPI",
+      DEMO_CARD: "Demo Card",
+      ONLINE: "Online Payment"
+    };
+
+    return methods[method] || method || "N/A";
+  };
+
   const statusColor = (status) => {
     if (status === "Delivered") return "#4ade80";
     if (status === "Cancelled") return "#ff7070";
@@ -112,7 +154,9 @@ function App() {
 
   const addToCart = (product) => {
     setCart((previous) => {
-      const existing = previous.find((item) => item.id === product.id);
+      const existing = previous.find(
+        (item) => item.id === product.id
+      );
 
       if (existing) {
         return previous.map((item) =>
@@ -130,14 +174,18 @@ function App() {
     setCart((previous) =>
       previous
         .map((item) =>
-          item.id === id ? { ...item, qty: item.qty + amount } : item
+          item.id === id
+            ? { ...item, qty: item.qty + amount }
+            : item
         )
         .filter((item) => item.qty > 0)
     );
   };
 
   const removeFromCart = (id) => {
-    setCart((previous) => previous.filter((item) => item.id !== id));
+    setCart((previous) =>
+      previous.filter((item) => item.id !== id)
+    );
   };
 
   const toggleWishlist = (product) => {
@@ -163,12 +211,16 @@ function App() {
     setAuthMode((previous) =>
       previous === "login" ? "signup" : "login"
     );
+
     setAuthMessage("");
     setAuthError(false);
     setPassword("");
   };
 
-  // Login and Signup
+  // ========================================
+  // LOGIN AND SIGNUP
+  // ========================================
+
   const handleAuth = async (e) => {
     e.preventDefault();
 
@@ -178,7 +230,8 @@ function App() {
     setAuthMessage("");
     setAuthError(false);
 
-    const endpoint = authMode === "login" ? "/login" : "/signup";
+    const endpoint =
+      authMode === "login" ? "/login" : "/signup";
 
     const body =
       authMode === "login"
@@ -186,29 +239,40 @@ function App() {
         : { name, email, password };
 
     try {
-      const response = await fetch(`${API_URL}${endpoint}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(body)
-      });
+      const response = await fetch(
+        `${API_URL}${endpoint}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(body)
+        }
+      );
 
-      const data = await response.json();
+      const data = await safeReadJSON(response);
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || "Something went wrong");
+        throw new Error(
+          data.message || "Something went wrong"
+        );
       }
 
       if (authMode === "signup") {
-        setAuthMessage("Account created! Please login now.");
+        setAuthMessage(
+          "Account created! Please login now."
+        );
+
         setAuthError(false);
         setAuthMode("login");
         setName("");
         setPassword("");
       } else {
         localStorage.setItem("vogueToken", data.token);
-        localStorage.setItem("vogueUser", JSON.stringify(data.user));
+        localStorage.setItem(
+          "vogueUser",
+          JSON.stringify(data.user)
+        );
 
         setUser(data.user);
         setShowLogin(false);
@@ -223,13 +287,17 @@ function App() {
           ? "Backend server is not running. Please try again."
           : error.message
       );
+
       setAuthError(true);
     } finally {
       setLoading(false);
     }
   };
 
-  // Logout
+  // ========================================
+  // LOGOUT
+  // ========================================
+
   const handleLogout = () => {
     localStorage.removeItem("vogueToken");
     localStorage.removeItem("vogueUser");
@@ -238,12 +306,16 @@ function App() {
     setOrders([]);
     setAdminOrders([]);
     setSelectedOrder(null);
+    setShowCancelModal(false);
     setPage("home");
 
     alert("You have been logged out successfully.");
   };
 
-  // Checkout
+  // ========================================
+  // CHECKOUT
+  // ========================================
+
   const openCheckout = () => {
     if (!user) {
       alert("Please login before placing your order.");
@@ -258,6 +330,7 @@ function App() {
 
     setPlacedOrder(null);
     setOrderMessage("");
+    setPaymentMethod("COD");
     setShowCheckout(true);
 
     setShippingAddress((previous) => ({
@@ -275,7 +348,10 @@ function App() {
     }));
   };
 
-  // Place order
+  // ========================================
+  // PLACE COD / DEMO PAYMENT ORDER
+  // ========================================
+
   const handlePlaceOrder = async (e) => {
     e.preventDefault();
 
@@ -284,7 +360,14 @@ function App() {
     const token = localStorage.getItem("vogueToken");
 
     if (!token) {
-      setOrderMessage("Please login again before placing your order.");
+      setOrderMessage(
+        "Please login again before placing your order."
+      );
+      return;
+    }
+
+    if (cart.length === 0) {
+      setOrderMessage("Your cart is empty.");
       return;
     }
 
@@ -300,29 +383,67 @@ function App() {
         image: item.image
       }));
 
-      const response = await fetch(ORDERS_API_URL, {
+      const isDemoPayment = paymentMethod !== "COD";
+
+      const endpoint = isDemoPayment
+        ? `${ORDERS_API_URL}/demo-payment`
+        : ORDERS_API_URL;
+
+      const requestBody = {
+        items: orderItems,
+        shippingAddress,
+        paymentMethod,
+
+        // Demo mode internally simulates success.
+        // No real payment credentials or money are involved.
+        ...(isDemoPayment
+          ? { demoResult: "success" }
+          : {})
+      };
+
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
-          items: orderItems,
-          shippingAddress,
-          paymentMethod: "COD"
-        })
+        body: JSON.stringify(requestBody)
       });
 
-      const data = await response.json();
+      const data = await safeReadJSON(response);
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || "Unable to place order");
+        throw new Error(
+          data.message || "Unable to place order"
+        );
       }
 
+      // Demo payment failed.
+      // Cart remains unchanged and checkout remains open.
+      if (
+        isDemoPayment &&
+        data.paymentStatus !== "Paid"
+      ) {
+        setOrderMessage(
+          data.message ||
+          "Demo payment was not successful. Your cart has been saved. Please try again."
+        );
+
+        return;
+      }
+
+      if (!data.order) {
+        throw new Error(
+          "Order response is missing order details."
+        );
+      }
+
+      // Successful COD or Demo Payment
       setPlacedOrder(data.order);
       setShowCheckout(false);
       setCart([]);
       setOrderMessage("");
+      setPaymentMethod("COD");
 
     } catch (error) {
       setOrderMessage(
@@ -335,12 +456,17 @@ function App() {
     }
   };
 
-  // Fetch customer orders
+  // ========================================
+  // FETCH CUSTOMER ORDERS
+  // ========================================
+
   const fetchMyOrders = async () => {
     const token = localStorage.getItem("vogueToken");
 
     if (!token) {
-      setOrdersError("Please login to view your orders.");
+      setOrdersError(
+        "Please login to view your orders."
+      );
       return;
     }
 
@@ -348,16 +474,21 @@ function App() {
     setOrdersError("");
 
     try {
-      const response = await fetch(`${ORDERS_API_URL}/my-orders`, {
-        headers: {
-          Authorization: `Bearer ${token}`
+      const response = await fetch(
+        `${ORDERS_API_URL}/my-orders`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
         }
-      });
+      );
 
-      const data = await response.json();
+      const data = await safeReadJSON(response);
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || "Unable to fetch orders.");
+        throw new Error(
+          data.message || "Unable to fetch orders."
+        );
       }
 
       setOrders(data.orders || []);
@@ -384,7 +515,92 @@ function App() {
     fetchMyOrders();
   };
 
-  // ADMIN: Fetch all orders
+  // ========================================
+  // CUSTOMER: CANCEL ORDER
+  // ========================================
+
+  const handleCancelOrder = async () => {
+    if (!selectedOrder?.orderId) return;
+
+    const reason = cancellationReason.trim();
+
+    if (!reason) {
+      setCancelError(
+        "Please enter a cancellation reason."
+      );
+      return;
+    }
+
+    if (reason.length > 300) {
+      setCancelError(
+        "Reason cannot exceed 300 characters."
+      );
+      return;
+    }
+
+    const token = localStorage.getItem("vogueToken");
+
+    if (!token) {
+      setCancelError("Please login again.");
+      return;
+    }
+
+    setCancellingOrder(true);
+    setCancelError("");
+
+    try {
+      const response = await fetch(
+        `${ORDERS_API_URL}/${encodeURIComponent(
+          selectedOrder.orderId
+        )}/cancel`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            cancellationReason: reason
+          })
+        }
+      );
+
+      const data = await safeReadJSON(response);
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message || "Unable to cancel order."
+        );
+      }
+
+      setSelectedOrder(data.order);
+
+      setOrders((previous) =>
+        previous.map((order) =>
+          order.orderId === data.order.orderId
+            ? data.order
+            : order
+        )
+      );
+
+      setShowCancelModal(false);
+      setCancellationReason("");
+      setCancelError("");
+
+      alert(
+        "Your order has been cancelled successfully!"
+      );
+    } catch (error) {
+      setCancelError(error.message);
+    } finally {
+      setCancellingOrder(false);
+    }
+  };
+
+  // ========================================
+  // ADMIN: FETCH ALL ORDERS
+  // ========================================
+
   const fetchAdminOrders = async () => {
     const token = localStorage.getItem("vogueToken");
 
@@ -397,16 +613,21 @@ function App() {
     setAdminError("");
 
     try {
-      const response = await fetch(`${ORDERS_API_URL}/admin/all`, {
-        headers: {
-          Authorization: `Bearer ${token}`
+      const response = await fetch(
+        `${ORDERS_API_URL}/admin/all`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
         }
-      });
+      );
 
-      const data = await response.json();
+      const data = await safeReadJSON(response);
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || "Unable to fetch admin orders.");
+        throw new Error(
+          data.message || "Unable to fetch admin orders."
+        );
       }
 
       setAdminOrders(data.orders || []);
@@ -421,7 +642,10 @@ function App() {
     }
   };
 
-  // ADMIN: Open dashboard
+  // ========================================
+  // ADMIN: OPEN DASHBOARD
+  // ========================================
+
   const openAdminPanel = () => {
     if (!user || user.role !== "admin") {
       alert("Admin access denied.");
@@ -432,7 +656,10 @@ function App() {
     fetchAdminOrders();
   };
 
-  // ADMIN: Update order status
+  // ========================================
+  // ADMIN: UPDATE ORDER STATUS
+  // ========================================
+
   const updateOrderStatus = async (orderId, status) => {
     const token = localStorage.getItem("vogueToken");
 
@@ -445,7 +672,9 @@ function App() {
 
     try {
       const response = await fetch(
-        `${ORDERS_API_URL}/admin/${encodeURIComponent(orderId)}/status`,
+        `${ORDERS_API_URL}/admin/${encodeURIComponent(
+          orderId
+        )}/status`,
         {
           method: "PATCH",
           headers: {
@@ -456,17 +685,25 @@ function App() {
         }
       );
 
-      const data = await response.json();
+      const data = await safeReadJSON(response);
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || "Status update failed.");
+        throw new Error(
+          data.message || "Status update failed."
+        );
       }
 
       setAdminOrders((previous) =>
         previous.map((order) =>
-          order.orderId === orderId ? data.order : order
+          order.orderId === orderId
+            ? data.order
+            : order
         )
       );
+
+      if (selectedOrder?.orderId === orderId) {
+        setSelectedOrder(data.order);
+      }
 
       alert("Order status updated successfully!");
     } catch (error) {
@@ -476,9 +713,14 @@ function App() {
     }
   };
 
+  // ========================================
+  // FILTER PRODUCTS
+  // ========================================
+
   const filteredProducts = products.filter((product) => {
     const matchesCategory =
-      category === "All" || product.category === category;
+      category === "All" ||
+      product.category === category;
 
     const matchesSearch = product.name
       .toLowerCase()
@@ -487,37 +729,57 @@ function App() {
     return matchesCategory && matchesSearch;
   });
 
-  // Product cards
+  // ========================================
+  // PRODUCT CARDS
+  // ========================================
+
   const ProductList = ({ items }) => (
     <div className="product-grid">
       {items.length === 0 ? (
-        <p className="empty-message">No products found.</p>
+        <p className="empty-message">
+          No products found.
+        </p>
       ) : (
         items.map((product) => (
           <div className="product-card" key={product.id}>
             <div className="product-image-wrap">
-              <img src={product.image} alt={product.name} />
+              <img
+                src={product.image}
+                alt={product.name}
+              />
 
               <button
                 className={`wishlist-btn ${
-                  wishlist.some((item) => item.id === product.id)
+                  wishlist.some(
+                    (item) => item.id === product.id
+                  )
                     ? "saved"
                     : ""
                 }`}
                 onClick={() => toggleWishlist(product)}
               >
-                {wishlist.some((item) => item.id === product.id)
+                {wishlist.some(
+                  (item) => item.id === product.id
+                )
                   ? "♥"
                   : "♡"}
               </button>
 
-              <span className="product-tag">VOGUE EDIT</span>
+              <span className="product-tag">
+                VOGUE EDIT
+              </span>
             </div>
 
             <div className="product-info">
-              <p className="product-category">{product.category}</p>
+              <p className="product-category">
+                {product.category}
+              </p>
+
               <h3>{product.name}</h3>
-              <strong>₹{formatPrice(product.price)}</strong>
+
+              <strong>
+                ₹{formatPrice(product.price)}
+              </strong>
 
               <button
                 className="add-btn"
@@ -532,125 +794,385 @@ function App() {
     </div>
   );
 
-  // Order details component
-  const OrderDetails = ({ order, onBack, admin = false }) => (
-    <div
-      style={{
-        maxWidth: "850px",
-        margin: "30px auto",
-        padding: "25px",
-        border: "1px solid #d4af37",
-        borderRadius: "12px"
-      }}
-    >
-      <button
-        className="primary-btn"
-        onClick={onBack}
-        style={{ marginBottom: "20px" }}
+  // ========================================
+  // ORDER DETAILS
+  // ========================================
+
+  const renderOrderDetails = ({
+    order,
+    onBack,
+    admin = false
+  }) => {
+    const canCancel =
+      !admin &&
+      ["Pending", "Confirmed"].includes(
+        order.orderStatus
+      );
+
+    return (
+      <div
+        style={{
+          maxWidth: "850px",
+          margin: "30px auto",
+          padding: "25px",
+          border: "1px solid #d4af37",
+          borderRadius: "12px"
+        }}
       >
-        ← BACK
-      </button>
+        <button
+          className="primary-btn"
+          onClick={onBack}
+          style={{ marginBottom: "20px" }}
+        >
+          ← BACK
+        </button>
 
-      <h2 style={{ color: "#d4af37" }}>Order Details</h2>
+        <h2 style={{ color: "#d4af37" }}>
+          Order Details
+        </h2>
 
-      <p style={{ marginTop: "15px", overflowWrap: "anywhere" }}>
-        <strong>Order ID:</strong> {order.orderId}
-      </p>
-
-      <p>
-        <strong>Order Date:</strong>{" "}
-        {new Date(order.createdAt).toLocaleString("en-IN")}
-      </p>
-
-      <p>
-        <strong>Order Status:</strong>{" "}
-        <span style={{ color: statusColor(order.orderStatus) }}>
-          {order.orderStatus}
-        </span>
-      </p>
-
-      <p>
-        <strong>Payment:</strong>{" "}
-        {order.paymentMethod === "COD"
-          ? "Cash on Delivery"
-          : order.paymentMethod}
-      </p>
-
-      <p>
-        <strong>Payment Status:</strong> {order.paymentStatus}
-      </p>
-
-      {admin && (
-        <>
-          <p>
-            <strong>Customer:</strong>{" "}
-            {order.userId?.name || "Customer"}
-          </p>
-          <p>
-            <strong>Email:</strong> {order.userId?.email || "N/A"}
-          </p>
-        </>
-      )}
-
-      <hr style={{ margin: "20px 0" }} />
-
-      <h3>Ordered Products</h3>
-
-      {order.items?.map((item, index) => (
-        <div
-          key={index}
+        <p
           style={{
-            display: "flex",
-            gap: "15px",
-            alignItems: "center",
-            padding: "15px 0",
-            borderBottom: "1px solid #555"
+            marginTop: "15px",
+            overflowWrap: "anywhere"
           }}
         >
-          {item.image && (
-            <img
-              src={item.image}
-              alt={item.name}
-              style={{
-                width: "75px",
-                height: "85px",
-                objectFit: "cover",
-                borderRadius: "6px"
-              }}
-            />
+          <strong>Order ID:</strong> {order.orderId}
+        </p>
+
+        <p>
+          <strong>Order Date:</strong>{" "}
+          {new Date(order.createdAt).toLocaleString(
+            "en-IN"
           )}
+        </p>
 
-          <div>
-            <h4>{item.name}</h4>
-            <p>Quantity: {item.quantity}</p>
-            <p>Price: ₹{formatPrice(item.price)}</p>
+        <p>
+          <strong>Order Status:</strong>{" "}
+          <span
+            style={{
+              color: statusColor(order.orderStatus)
+            }}
+          >
+            {order.orderStatus}
+          </span>
+        </p>
+
+        <p>
+          <strong>Payment:</strong>{" "}
+          {paymentMethodLabel(order.paymentMethod)}
+        </p>
+
+        <p>
+          <strong>Payment Status:</strong>{" "}
+          {order.paymentStatus}
+        </p>
+
+        {order.isDemoPayment && (
+          <p
+            style={{
+              color: "#d4af37",
+              fontSize: "13px"
+            }}
+          >
+            Demo Payment — No real money transferred.
+          </p>
+        )}
+
+        {admin && (
+          <>
             <p>
-              Item Total: ₹
-              {formatPrice(Number(item.price) * Number(item.quantity))}
+              <strong>Customer:</strong>{" "}
+              {order.userId?.name || "Customer"}
             </p>
+
+            <p>
+              <strong>Email:</strong>{" "}
+              {order.userId?.email || "N/A"}
+            </p>
+          </>
+        )}
+
+        {order.orderStatus === "Cancelled" && (
+          <div
+            style={{
+              marginTop: "18px",
+              padding: "15px",
+              border: "1px solid #ff7070",
+              borderRadius: "8px",
+              background: "rgba(255, 112, 112, 0.07)"
+            }}
+          >
+            <h3 style={{ color: "#ff7070" }}>
+              Order Cancelled
+            </h3>
+
+            <p style={{ marginTop: "10px" }}>
+              <strong>Cancellation Reason:</strong>{" "}
+              {order.cancellationReason || "Not provided"}
+            </p>
+
+            {order.cancelledAt && (
+              <p style={{ marginTop: "7px" }}>
+                <strong>Cancelled On:</strong>{" "}
+                {new Date(
+                  order.cancelledAt
+                ).toLocaleString("en-IN")}
+              </p>
+            )}
           </div>
-        </div>
-      ))}
+        )}
 
-      <h3 style={{ marginTop: "20px", color: "#d4af37" }}>
-        Total: ₹{formatPrice(order.totalAmount)}
-      </h3>
+        {canCancel && (
+          <button
+            type="button"
+            onClick={() => {
+              setCancellationReason("");
+              setCancelError("");
+              setShowCancelModal(true);
+            }}
+            style={{
+              marginTop: "18px",
+              padding: "12px 20px",
+              border: "1px solid #ff7070",
+              borderRadius: "6px",
+              background: "#ff7070",
+              color: "#fff",
+              fontWeight: "bold",
+              cursor: "pointer"
+            }}
+          >
+            CANCEL ORDER
+          </button>
+        )}
 
-      <hr style={{ margin: "20px 0" }} />
+        <hr style={{ margin: "20px 0" }} />
 
-      <h3>Delivery Address</h3>
-      <p>{order.shippingAddress?.fullName}</p>
-      <p>{order.shippingAddress?.phone}</p>
-      <p>{order.shippingAddress?.address}</p>
-      <p>
-        {order.shippingAddress?.city},{" "}
-        {order.shippingAddress?.state} -{" "}
-        {order.shippingAddress?.pincode}
-      </p>
-    </div>
-  );
+        <h3>Ordered Products</h3>
 
-  // Admin dashboard calculations
+        {order.items?.map((item, index) => (
+          <div
+            key={index}
+            style={{
+              display: "flex",
+              gap: "15px",
+              alignItems: "center",
+              padding: "15px 0",
+              borderBottom: "1px solid #555"
+            }}
+          >
+            {item.image && (
+              <img
+                src={item.image}
+                alt={item.name}
+                style={{
+                  width: "75px",
+                  height: "85px",
+                  objectFit: "cover",
+                  borderRadius: "6px"
+                }}
+              />
+            )}
+
+            <div>
+              <h4>{item.name}</h4>
+              <p>Quantity: {item.quantity}</p>
+              <p>
+                Price: ₹{formatPrice(item.price)}
+              </p>
+              <p>
+                Item Total: ₹
+                {formatPrice(
+                  Number(item.price) *
+                    Number(item.quantity)
+                )}
+              </p>
+            </div>
+          </div>
+        ))}
+
+        <h3
+          style={{
+            marginTop: "20px",
+            color: "#d4af37"
+          }}
+        >
+          Total: ₹{formatPrice(order.totalAmount)}
+        </h3>
+
+        <hr style={{ margin: "20px 0" }} />
+
+        <h3>Delivery Address</h3>
+        <p>{order.shippingAddress?.fullName}</p>
+        <p>{order.shippingAddress?.phone}</p>
+        <p>{order.shippingAddress?.address}</p>
+        <p>
+          {order.shippingAddress?.city},{" "}
+          {order.shippingAddress?.state} -{" "}
+          {order.shippingAddress?.pincode}
+        </p>
+
+        {/* CUSTOMER CANCELLATION MODAL */}
+        {showCancelModal && !admin && (
+          <div
+            onClick={(e) => {
+              if (
+                e.target === e.currentTarget &&
+                !cancellingOrder
+              ) {
+                setShowCancelModal(false);
+                setCancelError("");
+              }
+            }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 9999,
+              background: "rgba(0,0,0,0.82)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "15px"
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                maxWidth: "480px",
+                padding: "25px",
+                border: "1px solid #d4af37",
+                borderRadius: "12px",
+                background: "#171717",
+                color: "#fff",
+                boxShadow: "0 10px 40px rgba(0,0,0,0.5)"
+              }}
+            >
+              <h2 style={{ color: "#ff7070" }}>
+                Cancel Your Order?
+              </h2>
+
+              <p
+                style={{
+                  marginTop: "12px",
+                  lineHeight: 1.6
+                }}
+              >
+                Please tell us why you want to cancel this order.
+              </p>
+
+              <textarea
+                value={cancellationReason}
+                onChange={(e) => {
+                  setCancellationReason(e.target.value);
+                  setCancelError("");
+                }}
+                placeholder="Enter your cancellation reason..."
+                maxLength={300}
+                rows={4}
+                disabled={cancellingOrder}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  marginTop: "18px",
+                  padding: "12px",
+                  border: "1px solid #777",
+                  borderRadius: "7px",
+                  background: "#252525",
+                  color: "#fff",
+                  resize: "vertical",
+                  fontFamily: "inherit",
+                  fontSize: "14px"
+                }}
+              />
+
+              <p
+                style={{
+                  textAlign: "right",
+                  fontSize: "12px",
+                  opacity: 0.7,
+                  marginTop: "5px"
+                }}
+              >
+                {cancellationReason.length}/300 characters
+              </p>
+
+              {cancelError && (
+                <p
+                  style={{
+                    color: "#ff7070",
+                    marginTop: "10px",
+                    fontSize: "14px"
+                  }}
+                >
+                  {cancelError}
+                </p>
+              )}
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  flexWrap: "wrap",
+                  marginTop: "20px"
+                }}
+              >
+                <button
+                  type="button"
+                  disabled={cancellingOrder}
+                  onClick={() => {
+                    setShowCancelModal(false);
+                    setCancellationReason("");
+                    setCancelError("");
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: "120px",
+                    padding: "12px",
+                    border: "1px solid #888",
+                    borderRadius: "6px",
+                    background: "transparent",
+                    color: "#fff",
+                    cursor: "pointer"
+                  }}
+                >
+                  GO BACK
+                </button>
+
+                <button
+                  type="button"
+                  disabled={cancellingOrder}
+                  onClick={handleCancelOrder}
+                  style={{
+                    flex: 1,
+                    minWidth: "120px",
+                    padding: "12px",
+                    border: "none",
+                    borderRadius: "6px",
+                    background: "#ff7070",
+                    color: "#fff",
+                    fontWeight: "bold",
+                    cursor: cancellingOrder
+                      ? "not-allowed"
+                      : "pointer",
+                    opacity: cancellingOrder ? 0.7 : 1
+                  }}
+                >
+                  {cancellingOrder
+                    ? "CANCELLING..."
+                    : "CONFIRM CANCEL"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ========================================
+  // ADMIN DASHBOARD CALCULATIONS
+  // ========================================
+
   const adminSales = adminOrders.reduce(
     (sum, order) =>
       order.orderStatus !== "Cancelled"
@@ -679,6 +1201,10 @@ function App() {
     (order) => order.orderStatus === "Cancelled"
   ).length;
 
+  // ========================================
+  // UI
+  // ========================================
+
   return (
     <div className="app">
       <div className="top-strip">
@@ -687,15 +1213,26 @@ function App() {
 
       {/* NAVBAR */}
       <header className="navbar">
-        <h2 className="logo" onClick={() => setPage("home")}>
+        <h2
+          className="logo"
+          onClick={() => setPage("home")}
+        >
           VOGUE<span>.</span>
         </h2>
 
         <nav>
-          <button onClick={() => setPage("home")}>Home</button>
-          <button onClick={() => setPage("shop")}>Shop</button>
-          <button onClick={() => setPage("about")}>About</button>
-          <button onClick={() => setPage("contact")}>Contact</button>
+          <button onClick={() => setPage("home")}>
+            Home
+          </button>
+          <button onClick={() => setPage("shop")}>
+            Shop
+          </button>
+          <button onClick={() => setPage("about")}>
+            About
+          </button>
+          <button onClick={() => setPage("contact")}>
+            Contact
+          </button>
         </nav>
 
         <div className="nav-actions">
@@ -716,7 +1253,10 @@ function App() {
           {user?.role === "admin" && (
             <button
               onClick={openAdminPanel}
-              style={{ color: "#d4af37", fontWeight: "bold" }}
+              style={{
+                color: "#d4af37",
+                fontWeight: "bold"
+              }}
             >
               ⚙ Admin Panel
             </button>
@@ -727,10 +1267,15 @@ function App() {
               <button className="login-nav-btn">
                 Hi, {user.name}
               </button>
-              <button onClick={handleLogout}>Logout</button>
+              <button onClick={handleLogout}>
+                Logout
+              </button>
             </>
           ) : (
-            <button className="login-nav-btn" onClick={openLogin}>
+            <button
+              className="login-nav-btn"
+              onClick={openLogin}
+            >
               Login
             </button>
           )}
@@ -742,9 +1287,19 @@ function App() {
         <>
           <section className="hero">
             <div className="hero-content">
-              <p className="eyebrow">THE NEW FASHION EXPERIENCE</p>
-              <h1>STYLE THAT<br />LIGHTS YOU UP.</h1>
-              <p>Discover your style. Define your personality.</p>
+              <p className="eyebrow">
+                THE NEW FASHION EXPERIENCE
+              </p>
+
+              <h1>
+                STYLE THAT
+                <br />
+                LIGHTS YOU UP.
+              </h1>
+
+              <p>
+                Discover your style. Define your personality.
+              </p>
 
               <button
                 className="primary-btn"
@@ -756,15 +1311,35 @@ function App() {
           </section>
 
           <section className="features">
-            <div>✦ <strong>Premium Quality</strong><small>Fashion that lasts</small></div>
-            <div>✧ <strong>Free Shipping</strong><small>On orders above ₹1999</small></div>
-            <div>❖ <strong>Easy Shopping</strong><small>Simple and secure experience</small></div>
+            <div>
+              ✦ <strong>Premium Quality</strong>
+              <small>Fashion that lasts</small>
+            </div>
+
+            <div>
+              ✧ <strong>Free Shipping</strong>
+              <small>On orders above ₹1999</small>
+            </div>
+
+            <div>
+              ❖ <strong>Easy Shopping</strong>
+              <small>Simple and secure experience</small>
+            </div>
           </section>
 
           <section className="home-products">
-            <p className="eyebrow">HANDPICKED FOR YOU</p>
-            <h2 className="section-title">Our Collection</h2>
-            <p className="section-subtitle">Find your next favourite look.</p>
+            <p className="eyebrow">
+              HANDPICKED FOR YOU
+            </p>
+
+            <h2 className="section-title">
+              Our Collection
+            </h2>
+
+            <p className="section-subtitle">
+              Find your next favourite look.
+            </p>
+
             <ProductList items={products.slice(0, 4)} />
 
             <div className="center-btn">
@@ -782,9 +1357,17 @@ function App() {
       {/* SHOP */}
       {page === "shop" && (
         <main className="page-content">
-          <p className="eyebrow center-text">DISCOVER YOUR STYLE</p>
-          <h1 className="page-title">Shop Collection</h1>
-          <p className="section-subtitle">Explore our latest fashion collection.</p>
+          <p className="eyebrow center-text">
+            DISCOVER YOUR STYLE
+          </p>
+
+          <h1 className="page-title">
+            Shop Collection
+          </h1>
+
+          <p className="section-subtitle">
+            Explore our latest fashion collection.
+          </p>
 
           <div className="shop-toolbar">
             <input
@@ -796,15 +1379,19 @@ function App() {
             />
 
             <div className="category-filters">
-              {["All", "Men", "Women", "Accessories"].map((item) => (
-                <button
-                  key={item}
-                  className={`filter-btn ${category === item ? "active" : ""}`}
-                  onClick={() => setCategory(item)}
-                >
-                  {item}
-                </button>
-              ))}
+              {["All", "Men", "Women", "Accessories"].map(
+                (item) => (
+                  <button
+                    key={item}
+                    className={`filter-btn ${
+                      category === item ? "active" : ""
+                    }`}
+                    onClick={() => setCategory(item)}
+                  >
+                    {item}
+                  </button>
+                )
+              )}
             </div>
           </div>
 
@@ -815,7 +1402,9 @@ function App() {
       {/* CART */}
       {page === "cart" && (
         <main className="page-content">
-          <h1 className="page-title">Your Shopping Cart</h1>
+          <h1 className="page-title">
+            Your Shopping Cart
+          </h1>
 
           {placedOrder ? (
             <div
@@ -832,19 +1421,53 @@ function App() {
                 Order Placed Successfully!
               </h2>
 
-              <p>Thank you for shopping with VOGUE.</p>
-              <p style={{ marginTop: "20px" }}>Your Order ID:</p>
+              <p>
+                Thank you for shopping with VOGUE.
+              </p>
 
-              <h2 style={{ color: "#d4af37", overflowWrap: "anywhere" }}>
+              <p style={{ marginTop: "20px" }}>
+                Your Order ID:
+              </p>
+
+              <h2
+                style={{
+                  color: "#d4af37",
+                  overflowWrap: "anywhere"
+                }}
+              >
                 {placedOrder.orderId}
               </h2>
 
               <p style={{ marginTop: "15px" }}>
-                Total Amount: ₹{formatPrice(placedOrder.totalAmount)}
+                Total Amount: ₹
+                {formatPrice(placedOrder.totalAmount)}
               </p>
 
-              <p>Payment Method: Cash on Delivery</p>
-              <p>Order Status: {placedOrder.orderStatus}</p>
+              <p>
+                Payment Method:{" "}
+                {paymentMethodLabel(
+                  placedOrder.paymentMethod
+                )}
+              </p>
+
+              <p>
+                Payment Status: {placedOrder.paymentStatus}
+              </p>
+
+              {placedOrder.isDemoPayment && (
+                <p
+                  style={{
+                    color: "#d4af37",
+                    marginTop: "8px"
+                  }}
+                >
+                  Demo transaction only — no real money transferred.
+                </p>
+              )}
+
+              <p>
+                Order Status: {placedOrder.orderStatus}
+              </p>
 
               <button
                 className="primary-btn"
@@ -858,11 +1481,12 @@ function App() {
                 CONTINUE SHOPPING
               </button>
             </div>
-
           ) : cart.length === 0 ? (
             <div className="empty-state">
               <h2>Your cart is empty</h2>
-              <p>Looks like you haven't added anything yet.</p>
+              <p>
+                Looks like you haven't added anything yet.
+              </p>
 
               <button
                 className="primary-btn"
@@ -871,7 +1495,6 @@ function App() {
                 START SHOPPING
               </button>
             </div>
-
           ) : showCheckout ? (
             <div
               className="checkout-form"
@@ -884,6 +1507,7 @@ function App() {
               }}
             >
               <h2>Delivery Details</h2>
+
               <p style={{ marginBottom: "20px" }}>
                 Enter your address to complete your order.
               </p>
@@ -892,7 +1516,8 @@ function App() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(220px, 1fr))",
                     gap: "15px"
                   }}
                 >
@@ -904,7 +1529,10 @@ function App() {
                     onChange={handleAddressChange}
                     required
                     minLength={2}
-                    style={{ width: "100%", padding: "13px" }}
+                    style={{
+                      width: "100%",
+                      padding: "13px"
+                    }}
                   />
 
                   <input
@@ -917,7 +1545,10 @@ function App() {
                     pattern="[0-9]{10}"
                     maxLength={10}
                     title="Enter a valid 10-digit mobile number"
-                    style={{ width: "100%", padding: "13px" }}
+                    style={{
+                      width: "100%",
+                      padding: "13px"
+                    }}
                   />
 
                   <input
@@ -927,7 +1558,10 @@ function App() {
                     value={shippingAddress.address}
                     onChange={handleAddressChange}
                     required
-                    style={{ width: "100%", padding: "13px" }}
+                    style={{
+                      width: "100%",
+                      padding: "13px"
+                    }}
                   />
 
                   <input
@@ -937,7 +1571,10 @@ function App() {
                     value={shippingAddress.city}
                     onChange={handleAddressChange}
                     required
-                    style={{ width: "100%", padding: "13px" }}
+                    style={{
+                      width: "100%",
+                      padding: "13px"
+                    }}
                   />
 
                   <input
@@ -947,7 +1584,10 @@ function App() {
                     value={shippingAddress.state}
                     onChange={handleAddressChange}
                     required
-                    style={{ width: "100%", padding: "13px" }}
+                    style={{
+                      width: "100%",
+                      padding: "13px"
+                    }}
                   />
 
                   <input
@@ -960,10 +1600,14 @@ function App() {
                     pattern="[0-9]{6}"
                     maxLength={6}
                     title="Enter a valid 6-digit PIN code"
-                    style={{ width: "100%", padding: "13px" }}
+                    style={{
+                      width: "100%",
+                      padding: "13px"
+                    }}
                   />
                 </div>
 
+                {/* PAYMENT METHOD */}
                 <div
                   style={{
                     marginTop: "25px",
@@ -973,24 +1617,397 @@ function App() {
                   }}
                 >
                   <h3>Payment Method</h3>
-                  <p style={{ marginTop: "10px" }}>
-                    <strong>Cash on Delivery (COD)</strong>
-                  </p>
-                  <small>Pay when your order is delivered.</small>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "13px",
+                      marginTop: "15px"
+                    }}
+                  >
+                    {/* COD */}
+                    <label
+                      style={{
+                        display: "flex",
+                        gap: "10px",
+                        alignItems: "center",
+                        cursor: "pointer"
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        value="COD"
+                        checked={paymentMethod === "COD"}
+                        onChange={() =>
+                          setPaymentMethod("COD")
+                        }
+                      />
+
+                      <span>
+                        <strong>Cash on Delivery</strong>
+                        <small
+                          style={{
+                            display: "block",
+                            opacity: 0.7
+                          }}
+                        >
+                          Pay when your order is delivered.
+                        </small>
+                      </span>
+                    </label>
+
+                    {/* DEMO UPI */}
+                    <label
+                      style={{
+                        display: "flex",
+                        gap: "10px",
+                        alignItems: "center",
+                        cursor: "pointer"
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        value="DEMO_UPI"
+                        checked={paymentMethod === "DEMO_UPI"}
+                        onChange={() =>
+                          setPaymentMethod("DEMO_UPI")
+                        }
+                      />
+
+                      <span>
+                        <strong>UPI Payment</strong>
+                        <small
+                          style={{
+                            display: "block",
+                            opacity: 0.7
+                          }}
+                        >
+                          Demo UPI payment preview.
+                        </small>
+                      </span>
+                    </label>
+
+                    {/* DEMO CARD */}
+                    <label
+                      style={{
+                        display: "flex",
+                        gap: "10px",
+                        alignItems: "center",
+                        cursor: "pointer"
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        value="DEMO_CARD"
+                        checked={paymentMethod === "DEMO_CARD"}
+                        onChange={() =>
+                          setPaymentMethod("DEMO_CARD")
+                        }
+                      />
+
+                      <span>
+                        <strong>Credit / Debit Card</strong>
+                        <small
+                          style={{
+                            display: "block",
+                            opacity: 0.7
+                          }}
+                        >
+                          Demo card payment preview.
+                        </small>
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* UPI DEMO PREVIEW */}
+                  {paymentMethod === "DEMO_UPI" && (
+                    <div
+                      style={{
+                        marginTop: "22px",
+                        padding: "20px",
+                        borderRadius: "12px",
+                        background: "linear-gradient(135deg, #222, #343025)",
+                        border: "1px solid #d4af37"
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: "10px"
+                        }}
+                      >
+                        <strong
+                          style={{
+                            color: "#d4af37",
+                            fontSize: "18px"
+                          }}
+                        >
+                          VOGUE UPI
+                        </strong>
+
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            padding: "5px 9px",
+                            border: "1px solid #d4af37",
+                            borderRadius: "20px",
+                            color: "#d4af37"
+                          }}
+                        >
+                          DEMO MODE
+                        </span>
+                      </div>
+
+                      <p
+                        style={{
+                          fontSize: "13px",
+                          opacity: 0.8,
+                          marginTop: "18px"
+                        }}
+                      >
+                        UPI ID
+                      </p>
+
+                      <h3
+                        style={{
+                          marginTop: "5px",
+                          letterSpacing: "1px"
+                        }}
+                      >
+                        vogue.demo@upi
+                      </h3>
+
+                      <div
+                        style={{
+                          marginTop: "20px",
+                          paddingTop: "15px",
+                          borderTop: "1px solid rgba(212,175,55,0.3)",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center"
+                        }}
+                      >
+                        <span>Amount to pay</span>
+
+                        <strong
+                          style={{
+                            color: "#d4af37",
+                            fontSize: "23px"
+                          }}
+                        >
+                          ₹{formatPrice(finalTotal)}
+                        </strong>
+                      </div>
+
+                      <p
+                        style={{
+                          fontSize: "12px",
+                          lineHeight: 1.6,
+                          marginTop: "15px",
+                          opacity: 0.75
+                        }}
+                      >
+                        This is a visual payment simulation for
+                        project demonstration. No UPI transaction
+                        will take place.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* CARD DEMO PREVIEW */}
+                  {paymentMethod === "DEMO_CARD" && (
+                    <div
+                      style={{
+                        marginTop: "22px",
+                        padding: "22px",
+                        borderRadius: "14px",
+                        background: "linear-gradient(135deg, #161616, #49402b)",
+                        border: "1px solid #d4af37",
+                        boxShadow: "0 8px 25px rgba(0,0,0,0.3)"
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center"
+                        }}
+                      >
+                        <strong
+                          style={{
+                            color: "#d4af37",
+                            letterSpacing: "2px"
+                          }}
+                        >
+                          VOGUE BANK
+                        </strong>
+
+                        <span style={{ fontSize: "24px" }}>
+                          ◈
+                        </span>
+                      </div>
+
+                      <p
+                        style={{
+                          marginTop: "28px",
+                          fontSize: "12px",
+                          opacity: 0.7
+                        }}
+                      >
+                        CARD NUMBER
+                      </p>
+
+                      <h3
+                        style={{
+                          letterSpacing: "3px",
+                          marginTop: "7px"
+                        }}
+                      >
+                        •••• •••• •••• 0000
+                      </h3>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "end",
+                          marginTop: "25px",
+                          gap: "10px"
+                        }}
+                      >
+                        <div>
+                          <p
+                            style={{
+                              fontSize: "10px",
+                              opacity: 0.7
+                            }}
+                          >
+                            CARD HOLDER
+                          </p>
+
+                          <strong>VOGUE CUSTOMER</strong>
+                        </div>
+
+                        <div>
+                          <p
+                            style={{
+                              fontSize: "10px",
+                              opacity: 0.7
+                            }}
+                          >
+                            VALID THRU
+                          </p>
+
+                          <strong>XX / XX</strong>
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: "20px",
+                          paddingTop: "15px",
+                          borderTop: "1px solid rgba(212,175,55,0.3)",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center"
+                        }}
+                      >
+                        <span>Amount to pay</span>
+
+                        <strong
+                          style={{
+                            color: "#d4af37",
+                            fontSize: "23px"
+                          }}
+                        >
+                          ₹{formatPrice(finalTotal)}
+                        </strong>
+                      </div>
+
+                      <p
+                        style={{
+                          fontSize: "12px",
+                          lineHeight: 1.6,
+                          marginTop: "15px",
+                          opacity: 0.75
+                        }}
+                      >
+                        Demo card preview only. No card details,
+                        CVV, OTP or real payment credentials are
+                        required.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* DEMO PAYMENT NOTICE */}
+                  {paymentMethod !== "COD" && (
+                    <div
+                      style={{
+                        marginTop: "15px",
+                        padding: "12px",
+                        borderRadius: "7px",
+                        background: "rgba(212,175,55,0.08)",
+                        border: "1px dashed #d4af37"
+                      }}
+                    >
+                      <strong
+                        style={{
+                          color: "#d4af37",
+                          fontSize: "13px"
+                        }}
+                      >
+                        DEMO PAYMENT NOTICE
+                      </strong>
+
+                      <p
+                        style={{
+                          fontSize: "12px",
+                          lineHeight: 1.6,
+                          marginTop: "6px"
+                        }}
+                      >
+                        This payment interface is created only
+                        for portfolio demonstration. It does not
+                        connect to a bank or payment gateway.
+                        No actual money will be deducted. Never
+                        enter real card details, OTP or UPI PIN.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
+                {/* ORDER SUMMARY */}
                 <div style={{ marginTop: "20px" }}>
-                  <p>Subtotal: ₹{formatPrice(total)}</p>
                   <p>
-                    Shipping: {shippingCharge === 0 ? "FREE" : `₹${shippingCharge}`}
+                    Subtotal: ₹{formatPrice(total)}
                   </p>
+
+                  <p>
+                    Shipping:{" "}
+                    {shippingCharge === 0
+                      ? "FREE"
+                      : `₹${shippingCharge}`}
+                  </p>
+
                   <h3 style={{ marginTop: "10px" }}>
                     Total: ₹{formatPrice(finalTotal)}
                   </h3>
                 </div>
 
                 {orderMessage && (
-                  <p style={{ color: "#ff7070", marginTop: "15px" }}>
+                  <p
+                    style={{
+                      color: "#ff7070",
+                      marginTop: "15px",
+                      lineHeight: 1.5
+                    }}
+                  >
                     {orderMessage}
                   </p>
                 )}
@@ -999,9 +2016,16 @@ function App() {
                   type="submit"
                   className="primary-btn full-btn"
                   disabled={placingOrder}
-                  style={{ marginTop: "20px" }}
+                  style={{
+                    marginTop: "20px",
+                    opacity: placingOrder ? 0.7 : 1
+                  }}
                 >
-                  {placingOrder ? "PLACING ORDER..." : "PLACE ORDER"}
+                  {placingOrder
+                    ? "PROCESSING..."
+                    : paymentMethod === "COD"
+                    ? "PLACE COD ORDER"
+                    : `PAY ₹${formatPrice(finalTotal)}`}
                 </button>
 
                 <button
@@ -1018,27 +2042,48 @@ function App() {
                 </button>
               </form>
             </div>
-
           ) : (
             <div className="cart-layout">
               <div>
                 {cart.map((item) => (
-                  <div className="cart-item" key={item.id}>
-                    <img src={item.image} alt={item.name} />
+                  <div
+                    className="cart-item"
+                    key={item.id}
+                  >
+                    <img
+                      src={item.image}
+                      alt={item.name}
+                    />
 
                     <div className="cart-details">
                       <h3>{item.name}</h3>
                       <p>₹{formatPrice(item.price)}</p>
 
                       <div className="quantity">
-                        <button onClick={() => changeQty(item.id, -1)}>−</button>
+                        <button
+                          onClick={() =>
+                            changeQty(item.id, -1)
+                          }
+                        >
+                          −
+                        </button>
+
                         <strong>{item.qty}</strong>
-                        <button onClick={() => changeQty(item.id, 1)}>+</button>
+
+                        <button
+                          onClick={() =>
+                            changeQty(item.id, 1)
+                          }
+                        >
+                          +
+                        </button>
                       </div>
 
                       <button
                         className="remove-btn"
-                        onClick={() => removeFromCart(item.id)}
+                        onClick={() =>
+                          removeFromCart(item.id)
+                        }
                       >
                         Remove
                       </button>
@@ -1057,14 +2102,20 @@ function App() {
 
                 <p>
                   <span>Shipping</span>
-                  <strong>{shippingCharge === 0 ? "FREE" : "₹99"}</strong>
+                  <strong>
+                    {shippingCharge === 0
+                      ? "FREE"
+                      : "₹99"}
+                  </strong>
                 </p>
 
                 <hr />
 
                 <h3>
                   <span>Total</span>
-                  <strong>₹{formatPrice(finalTotal)}</strong>
+                  <strong>
+                    ₹{formatPrice(finalTotal)}
+                  </strong>
                 </h3>
 
                 <button
@@ -1082,8 +2133,12 @@ function App() {
       {/* MY ORDERS */}
       {page === "orders" && (
         <main className="page-content">
-          <p className="eyebrow center-text">YOUR VOGUE PURCHASES</p>
+          <p className="eyebrow center-text">
+            YOUR VOGUE PURCHASES
+          </p>
+
           <h1 className="page-title">My Orders</h1>
+
           <p className="section-subtitle">
             View and track all your VOGUE orders.
           </p>
@@ -1091,7 +2146,11 @@ function App() {
           {!user ? (
             <div className="empty-state">
               <h2>Please login first</h2>
-              <button className="primary-btn" onClick={openLogin}>
+
+              <button
+                className="primary-btn"
+                onClick={openLogin}
+              >
                 LOGIN
               </button>
             </div>
@@ -1103,14 +2162,21 @@ function App() {
             <div className="empty-state">
               <h2>Unable to load orders</h2>
               <p>{ordersError}</p>
-              <button className="primary-btn" onClick={fetchMyOrders}>
+
+              <button
+                className="primary-btn"
+                onClick={fetchMyOrders}
+              >
                 TRY AGAIN
               </button>
             </div>
           ) : orders.length === 0 ? (
             <div className="empty-state">
               <h2>No orders yet</h2>
-              <p>Your placed orders will appear here.</p>
+              <p>
+                Your placed orders will appear here.
+              </p>
+
               <button
                 className="primary-btn"
                 onClick={() => setPage("shop")}
@@ -1119,10 +2185,13 @@ function App() {
               </button>
             </div>
           ) : selectedOrder ? (
-            <OrderDetails
-              order={selectedOrder}
-              onBack={() => setSelectedOrder(null)}
-            />
+            renderOrderDetails({
+              order: selectedOrder,
+              onBack: () => {
+                setSelectedOrder(null);
+                setShowCancelModal(false);
+              }
+            })
           ) : (
             <div
               style={{
@@ -1153,35 +2222,80 @@ function App() {
                         : "none"
                   }}
                 >
-                  <div style={{ flex: "1", minWidth: "200px" }}>
-                    <strong style={{ color: "#d4af37", overflowWrap: "anywhere" }}>
+                  <div
+                    style={{
+                      flex: "1",
+                      minWidth: "200px"
+                    }}
+                  >
+                    <strong
+                      style={{
+                        color: "#d4af37",
+                        overflowWrap: "anywhere"
+                      }}
+                    >
                       {order.orderId}
                     </strong>
 
-                    <p style={{ fontSize: "13px", marginTop: "5px" }}>
-                      {new Date(order.createdAt).toLocaleDateString("en-IN")}
+                    <p
+                      style={{
+                        fontSize: "13px",
+                        marginTop: "5px"
+                      }}
+                    >
+                      {new Date(
+                        order.createdAt
+                      ).toLocaleDateString("en-IN")}
                       {" · "}
                       {order.items?.length || 0} Products
                     </p>
 
-                    <strong>₹{formatPrice(order.totalAmount)}</strong>
+                    <strong>
+                      ₹{formatPrice(order.totalAmount)}
+                    </strong>
 
                     <p style={{ fontSize: "13px" }}>
-                      {order.paymentMethod === "COD"
-                        ? "Cash on Delivery"
-                        : order.paymentMethod}
+                      {paymentMethodLabel(
+                        order.paymentMethod
+                      )}
+                      {" · "}
+                      {order.paymentStatus}
                     </p>
+
+                    {order.isDemoPayment && (
+                      <small style={{ color: "#d4af37" }}>
+                        DEMO PAYMENT
+                      </small>
+                    )}
                   </div>
 
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                    <span style={{ color: statusColor(order.orderStatus), fontSize: "13px", fontWeight: "bold" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      flexWrap: "wrap"
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: statusColor(order.orderStatus),
+                        fontSize: "13px",
+                        fontWeight: "bold"
+                      }}
+                    >
                       {order.orderStatus}
                     </span>
 
                     <button
                       className="primary-btn"
-                      onClick={() => setSelectedOrder(order)}
-                      style={{ padding: "9px 14px", fontSize: "12px" }}
+                      onClick={() =>
+                        setSelectedOrder(order)
+                      }
+                      style={{
+                        padding: "9px 14px",
+                        fontSize: "12px"
+                      }}
                     >
                       VIEW DETAILS →
                     </button>
@@ -1196,8 +2310,14 @@ function App() {
       {/* ADMIN DASHBOARD */}
       {page === "admin" && (
         <main className="page-content">
-          <p className="eyebrow center-text">VOGUE MANAGEMENT</p>
-          <h1 className="page-title">Admin Dashboard</h1>
+          <p className="eyebrow center-text">
+            VOGUE MANAGEMENT
+          </p>
+
+          <h1 className="page-title">
+            Admin Dashboard
+          </h1>
+
           <p className="section-subtitle">
             Manage customer orders and track store activity.
           </p>
@@ -1205,7 +2325,11 @@ function App() {
           {!user || user.role !== "admin" ? (
             <div className="empty-state">
               <h2>Admin access denied</h2>
-              <button className="primary-btn" onClick={() => setPage("home")}>
+
+              <button
+                className="primary-btn"
+                onClick={() => setPage("home")}
+              >
                 GO HOME
               </button>
             </div>
@@ -1217,7 +2341,11 @@ function App() {
             <div className="empty-state">
               <h2>Unable to load dashboard</h2>
               <p>{adminError}</p>
-              <button className="primary-btn" onClick={fetchAdminOrders}>
+
+              <button
+                className="primary-btn"
+                onClick={fetchAdminOrders}
+              >
                 TRY AGAIN
               </button>
             </div>
@@ -1227,20 +2355,49 @@ function App() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(180px, 1fr))",
                   gap: "15px",
                   maxWidth: "1100px",
                   margin: "30px auto"
                 }}
               >
                 {[
-                  { label: "Total Orders", value: adminOrders.length, color: "#d4af37" },
-                  { label: "Total Sales", value: `₹${formatPrice(adminSales)}`, color: "#4ade80" },
-                  { label: "Pending", value: pendingCount, color: "#d4af37" },
-                  { label: "Confirmed", value: confirmedCount, color: "#a78bfa" },
-                  { label: "Shipped", value: shippedCount, color: "#60a5fa" },
-                  { label: "Delivered", value: deliveredCount, color: "#4ade80" },
-                  { label: "Cancelled", value: cancelledCount, color: "#ff7070" }
+                  {
+                    label: "Total Orders",
+                    value: adminOrders.length,
+                    color: "#d4af37"
+                  },
+                  {
+                    label: "Total Sales",
+                    value: `₹${formatPrice(adminSales)}`,
+                    color: "#4ade80"
+                  },
+                  {
+                    label: "Pending",
+                    value: pendingCount,
+                    color: "#d4af37"
+                  },
+                  {
+                    label: "Confirmed",
+                    value: confirmedCount,
+                    color: "#a78bfa"
+                  },
+                  {
+                    label: "Shipped",
+                    value: shippedCount,
+                    color: "#60a5fa"
+                  },
+                  {
+                    label: "Delivered",
+                    value: deliveredCount,
+                    color: "#4ade80"
+                  },
+                  {
+                    label: "Cancelled",
+                    value: cancelledCount,
+                    color: "#ff7070"
+                  }
                 ].map((stat) => (
                   <div
                     key={stat.label}
@@ -1252,10 +2409,22 @@ function App() {
                       background: "rgba(255,255,255,0.025)"
                     }}
                   >
-                    <p style={{ fontSize: "14px", opacity: 0.8 }}>
+                    <p
+                      style={{
+                        fontSize: "14px",
+                        opacity: 0.8
+                      }}
+                    >
                       {stat.label}
                     </p>
-                    <h2 style={{ color: stat.color, marginTop: "10px", overflowWrap: "anywhere" }}>
+
+                    <h2
+                      style={{
+                        color: stat.color,
+                        marginTop: "10px",
+                        overflowWrap: "anywhere"
+                      }}
+                    >
                       {stat.value}
                     </h2>
                   </div>
@@ -1272,13 +2441,25 @@ function App() {
                   borderRadius: "12px"
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
-                  <h2>All Customer Orders ({adminOrders.length})</h2>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: "12px"
+                  }}
+                >
+                  <h2>
+                    All Customer Orders ({adminOrders.length})
+                  </h2>
 
                   <button
                     className="primary-btn"
                     onClick={fetchAdminOrders}
-                    style={{ padding: "10px 16px" }}
+                    style={{
+                      padding: "10px 16px"
+                    }}
                   >
                     ↻ REFRESH
                   </button>
@@ -1290,7 +2471,12 @@ function App() {
                     <p>New orders will appear here.</p>
                   </div>
                 ) : (
-                  <div style={{ overflowX: "auto", marginTop: "20px" }}>
+                  <div
+                    style={{
+                      overflowX: "auto",
+                      marginTop: "20px"
+                    }}
+                  >
                     {adminOrders.map((order) => (
                       <div
                         key={order._id}
@@ -1298,53 +2484,103 @@ function App() {
                           padding: "20px 5px",
                           borderBottom: "1px solid #555",
                           display: "grid",
-                          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(190px, 1fr))",
                           gap: "15px",
                           alignItems: "center"
                         }}
                       >
                         <div>
-                          <strong style={{ color: "#d4af37", overflowWrap: "anywhere" }}>
+                          <strong
+                            style={{
+                              color: "#d4af37",
+                              overflowWrap: "anywhere"
+                            }}
+                          >
                             {order.orderId}
                           </strong>
-                          <p style={{ fontSize: "13px", marginTop: "6px" }}>
-                            {new Date(order.createdAt).toLocaleDateString("en-IN")}
+
+                          <p
+                            style={{
+                              fontSize: "13px",
+                              marginTop: "6px"
+                            }}
+                          >
+                            {new Date(
+                              order.createdAt
+                            ).toLocaleDateString("en-IN")}
                           </p>
+
                           <p style={{ fontSize: "13px" }}>
                             {order.items?.length || 0} Products
                           </p>
                         </div>
 
                         <div>
-                          <strong>{order.userId?.name || "Customer"}</strong>
-                          <p style={{ fontSize: "13px", overflowWrap: "anywhere" }}>
+                          <strong>
+                            {order.userId?.name || "Customer"}
+                          </strong>
+
+                          <p
+                            style={{
+                              fontSize: "13px",
+                              overflowWrap: "anywhere"
+                            }}
+                          >
                             {order.userId?.email || "N/A"}
                           </p>
+
                           <p style={{ fontSize: "13px" }}>
-                            Phone: {order.shippingAddress?.phone || "N/A"}
+                            Phone:{" "}
+                            {order.shippingAddress?.phone || "N/A"}
                           </p>
                         </div>
 
                         <div>
-                          <strong>₹{formatPrice(order.totalAmount)}</strong>
+                          <strong>
+                            ₹{formatPrice(order.totalAmount)}
+                          </strong>
+
                           <p style={{ fontSize: "13px" }}>
-                            {order.paymentMethod === "COD" ? "Cash on Delivery" : order.paymentMethod}
+                            {paymentMethodLabel(
+                              order.paymentMethod
+                            )}
                           </p>
+
                           <p style={{ fontSize: "13px" }}>
                             Payment: {order.paymentStatus}
                           </p>
+
+                          {order.isDemoPayment && (
+                            <small
+                              style={{ color: "#d4af37" }}
+                            >
+                              DEMO PAYMENT
+                            </small>
+                          )}
                         </div>
 
                         <div>
-                          <p style={{ fontSize: "13px", marginBottom: "7px" }}>
+                          <p
+                            style={{
+                              fontSize: "13px",
+                              marginBottom: "7px"
+                            }}
+                          >
                             Order Status
                           </p>
 
                           <select
                             value={order.orderStatus}
-                            disabled={updatingOrder === order.orderId}
+                            disabled={
+                              updatingOrder === order.orderId ||
+                              order.orderStatus === "Cancelled"
+                            }
                             onChange={(e) =>
-                              updateOrderStatus(order.orderId, e.target.value)
+                              updateOrderStatus(
+                                order.orderId,
+                                e.target.value
+                              )
                             }
                             style={{
                               width: "100%",
@@ -1357,7 +2593,10 @@ function App() {
                             }}
                           >
                             {ORDER_STATUSES.map((status) => (
-                              <option key={status} value={status}>
+                              <option
+                                key={status}
+                                value={status}
+                              >
                                 {status}
                               </option>
                             ))}
@@ -1375,7 +2614,10 @@ function App() {
                               setSelectedOrder(order);
                               setPage("admin-details");
                             }}
-                            style={{ padding: "10px 14px", fontSize: "12px" }}
+                            style={{
+                              padding: "10px 14px",
+                              fontSize: "12px"
+                            }}
                           >
                             VIEW DETAILS →
                           </button>
@@ -1391,54 +2633,79 @@ function App() {
       )}
 
       {/* ADMIN ORDER DETAILS */}
-      {page === "admin-details" && selectedOrder && user?.role === "admin" && (
-        <main className="page-content">
-          <p className="eyebrow center-text">VOGUE MANAGEMENT</p>
-          <h1 className="page-title">Customer Order</h1>
+      {page === "admin-details" &&
+        selectedOrder &&
+        user?.role === "admin" && (
+          <main className="page-content">
+            <p className="eyebrow center-text">
+              VOGUE MANAGEMENT
+            </p>
 
-          <OrderDetails
-            order={selectedOrder}
-            admin
-            onBack={() => {
-              setSelectedOrder(null);
-              setPage("admin");
-            }}
-          />
+            <h1 className="page-title">
+              Customer Order
+            </h1>
 
-          <div style={{ textAlign: "center", marginBottom: "30px" }}>
-            <label style={{ display: "block", marginBottom: "10px" }}>
-              Update Order Status
-            </label>
-
-            <select
-              value={selectedOrder.orderStatus}
-              disabled={updatingOrder === selectedOrder.orderId}
-              onChange={(e) =>
-                updateOrderStatus(selectedOrder.orderId, e.target.value)
+            {renderOrderDetails({
+              order: selectedOrder,
+              admin: true,
+              onBack: () => {
+                setSelectedOrder(null);
+                setPage("admin");
               }
+            })}
+
+            <div
               style={{
-                padding: "12px",
-                borderRadius: "6px",
-                background: "#171717",
-                color: "#d4af37",
-                border: "1px solid #d4af37",
-                minWidth: "220px"
+                textAlign: "center",
+                marginBottom: "30px"
               }}
             >
-              {ORDER_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </div>
-        </main>
-      )}
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "10px"
+                }}
+              >
+                Update Order Status
+              </label>
+
+              <select
+                value={selectedOrder.orderStatus}
+                disabled={
+                  updatingOrder === selectedOrder.orderId ||
+                  selectedOrder.orderStatus === "Cancelled"
+                }
+                onChange={(e) =>
+                  updateOrderStatus(
+                    selectedOrder.orderId,
+                    e.target.value
+                  )
+                }
+                style={{
+                  padding: "12px",
+                  borderRadius: "6px",
+                  background: "#171717",
+                  color: "#d4af37",
+                  border: "1px solid #d4af37",
+                  minWidth: "220px"
+                }}
+              >
+                {ORDER_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </main>
+        )}
 
       {/* WISHLIST */}
       {page === "wishlist" && (
         <main className="page-content">
-          <h1 className="page-title">Your Wishlist ♡</h1>
+          <h1 className="page-title">
+            Your Wishlist ♡
+          </h1>
 
           {wishlist.length === 0 ? (
             <div className="empty-state">
@@ -1462,10 +2729,15 @@ function App() {
       {page === "about" && (
         <main className="info-page">
           <p className="eyebrow">OUR STORY</p>
-          <h1 className="page-title">About VOGUE</h1>
+
+          <h1 className="page-title">
+            About VOGUE
+          </h1>
+
           <p>
-            VOGUE is a fashion destination built around confidence, creativity
-            and individuality. Our collection brings together modern designs
+            VOGUE is a fashion destination built around
+            confidence, creativity and individuality.
+            Our collection brings together modern designs
             and timeless style to help you express yourself.
           </p>
         </main>
@@ -1476,14 +2748,24 @@ function App() {
 
       {/* FOOTER */}
       <footer className="footer">
-        <h2>VOGUE<span>.</span></h2>
+        <h2>
+          VOGUE<span>.</span>
+        </h2>
+
         <p>Style that lights you up.</p>
-        <small>© 2026 VOGUE. All rights reserved.</small>
+
+        <small>
+          © 2026 VOGUE. All rights reserved.
+        </small>
       </footer>
 
       {/* LOGIN / SIGNUP MODAL */}
       {showLogin && (
-        <div className={`login-overlay ${lightOn ? "light-active" : ""}`}>
+        <div
+          className={`login-overlay ${
+            lightOn ? "light-active" : ""
+          }`}
+        >
           <button
             className="modal-close"
             onClick={() => setShowLogin(false)}
@@ -1494,28 +2776,29 @@ function App() {
           <div className="room-glow"></div>
 
           <div
-            className="rope"
-            onClick={() => setLightOn(!lightOn)}
-          ></div>
-
-          <div
             className="bulb-wrap"
-            onClick={() => setLightOn(!lightOn)}
+            onClick={() => setLightOn((previous) => !previous)}
+            style={{ cursor: "pointer" }}
           >
             <div className="bulb"></div>
             <div className="bulb-base"></div>
+
             <span className="bulb-hint">
-              {lightOn ? "LIGHT ON" : "PULL TO LIGHT"}
+              {lightOn ? "LIGHT ON" : "TAP TO LIGHT"}
             </span>
           </div>
 
           <div className="light-beam"></div>
 
           <div className="login-box">
-            <p className="eyebrow">WELCOME TO VOGUE</p>
+            <p className="eyebrow">
+              WELCOME TO VOGUE
+            </p>
 
             <h2>
-              {authMode === "login" ? "WELCOME BACK" : "CREATE ACCOUNT"}
+              {authMode === "login"
+                ? "WELCOME BACK"
+                : "CREATE ACCOUNT"}
             </h2>
 
             <p className="login-subtitle">
@@ -1546,7 +2829,9 @@ function App() {
                 type="password"
                 placeholder="Password (minimum 6 characters)"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) =>
+                  setPassword(e.target.value)
+                }
                 required
                 minLength={6}
               />
@@ -1554,7 +2839,9 @@ function App() {
               {authMessage && (
                 <p
                   style={{
-                    color: authError ? "#ff7070" : "#d4af37",
+                    color: authError
+                      ? "#ff7070"
+                      : "#d4af37",
                     margin: "10px 0",
                     fontSize: "14px"
                   }}
@@ -1581,7 +2868,10 @@ function App() {
                 ? "New to VOGUE?"
                 : "Already have an account?"}
 
-              <button type="button" onClick={switchAuthMode}>
+              <button
+                type="button"
+                onClick={switchAuthMode}
+              >
                 {authMode === "login"
                   ? " Create account"
                   : " Login"}
