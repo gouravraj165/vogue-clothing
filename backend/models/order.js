@@ -8,7 +8,9 @@ const orderSchema = new mongoose.Schema(
       type: String,
       unique: true,
       default: () =>
-        `VOGUE-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`,
+        `VOGUE-${Date.now()}-${crypto.randomBytes(3)
+          .toString("hex")
+          .toUpperCase()}`,
     },
 
     userId: {
@@ -41,22 +43,76 @@ const orderSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Payment Method
     paymentMethod: {
       type: String,
-      enum: ["COD", "ONLINE"],
+      enum: ["COD", "ONLINE", "DEMO_UPI", "DEMO_CARD"],
       default: "COD",
+      required: true,
     },
 
+    // Payment Status
     paymentStatus: {
       type: String,
       enum: ["Pending", "Paid", "Failed"],
       default: "Pending",
     },
 
+    // Demo Payment Details
+    isDemoPayment: {
+      type: Boolean,
+      default: false,
+    },
+
+    demoPaymentReference: {
+      type: String,
+      default: "",
+    },
+
+    // Old Razorpay Details (kept for compatibility)
+    razorpayOrderId: {
+      type: String,
+      default: null,
+    },
+
+    razorpayPaymentId: {
+      type: String,
+      default: null,
+    },
+
+    paymentVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+
+    paymentFailureReason: {
+      type: String,
+      default: "",
+    },
+
+    // Order Status
     orderStatus: {
       type: String,
-      enum: ["Pending", "Confirmed", "Shipped", "Delivered", "Cancelled"],
+      enum: [
+        "Pending",
+        "Confirmed",
+        "Shipped",
+        "Delivered",
+        "Cancelled",
+      ],
       default: "Pending",
+    },
+
+    // Cancellation Details
+    cancellationReason: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    cancelledAt: {
+      type: Date,
+      default: null,
     },
   },
   { timestamps: true }
